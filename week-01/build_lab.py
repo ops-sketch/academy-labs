@@ -39,7 +39,7 @@ cells.append(md(
 
 ---
 
-_GIS is built on three geometric primitives — **Point**, **Line**, and **Polygon** — and every map you've ever looked at is some combination of those three. This week you'll create one of each, using **your own live location** (a Point), **the International Space Station's real ground track** (a Line), and **the country you're in** (a Polygon). Then we'll do the canonical GIS query — is your point inside your country's polygon? — and the canonical GIS mistake — measuring distance the wrong way._
+_GIS is built on three geometric primitives — **Point**, **Line**, and **Polygon** — and every map you've ever looked at is some combination of those three. This week you'll create **two Points** (your own live location, and the International Space Station's current sub-satellite point), one **Line** (the ISS ground track for the next orbit), and one **Polygon** (the country you're in). All four geometries side-by-side on one map, with their lat/lon coordinates visible. Then we'll do the canonical GIS query — is your point inside your country's polygon? — and the canonical GIS mistake — measuring distance the wrong way._
 """
 ))
 
@@ -207,13 +207,29 @@ segments.append(cur)
 iss_track = MultiLineString([LineString(s) for s in segments if len(s) >= 2])
 
 total_vertices = sum(len(list(g.coords)) for g in iss_track.geoms)
+
+# Pull out the ISS's CURRENT sub-satellite point as a Point geometry —
+# this is "where the ISS is RIGHT NOW, projected straight down". Same
+# primitive as your location (a Point), different source (orbital
+# mechanics instead of IP geolocation).
+from shapely.geometry import Point
+ISS_LAT_NOW = lats[0]
+ISS_LON_NOW = lons[0]
+iss_now = Point(ISS_LON_NOW, ISS_LAT_NOW)
+
 print()
-print(f"Geometry type:    {iss_track.geom_type}")
+print(f"Line geometry:    {iss_track.geom_type}")
 print(f"Dimensions:       1   # a Line has 1 dimension")
 print(f"Sub-line count:   {len(iss_track.geoms)}   # >1 if the orbit crossed the antimeridian")
 print(f"Vertices:         {total_vertices}")
-print(f"First sub-point:  lat={lats[0]:.3f}, lon={lons[0]:.3f}")
-print(f"Last sub-point:   lat={lats[-1]:.3f}, lon={lons[-1]:.3f}   (90 min later)")"""
+print()
+print(f"ISS RIGHT NOW (sub-satellite Point):")
+print(f"  lat={ISS_LAT_NOW:.4f}, lon={ISS_LON_NOW:.4f}")
+print(f"  Shapely: {iss_now.wkt}")
+print(f"  (Geometry type: {iss_now.geom_type}; dimensions: 0 — same primitive as YOU.)")
+print()
+print(f"ISS 90 min from now (end of the Line):")
+print(f"  lat={lats[-1]:.4f}, lon={lons[-1]:.4f}")"""
 ))
 
 cells.append(md(
@@ -281,9 +297,11 @@ if not inside:
 ))
 
 cells.append(md(
-"""## All three on one map
+"""## All three primitives on one map (two Points, one Line, one Polygon)
 
-Now we render the three primitives together: **your Point** in gold, the **ISS Line** in red, **your country Polygon** in cream with a teal border. This is the entirety of "what a map is" — composed primitives with a CRS.
+Now we render everything together: **YOUR Point** in gold, the **ISS-now Point** in red (also a Point — same primitive, different source), the **ISS Line** as a red track sweeping out the next 90 minutes, and **your country Polygon** in cream with a teal border. This is the entirety of "what a map is" — composed primitives with a CRS.
+
+Click each marker to see its lat/lon. You and the ISS are described by the same geometry type (Point) — but the ISS Point is 400 km above your head and moving at 7.66 km/s.
 """
 ))
 
@@ -311,13 +329,26 @@ folium.GeoJson(
     style_function=lambda f: {"color": "#dc2626", "weight": 3, "opacity": 0.85},
 ).add_to(m)
 
-# --- Point layer: YOU ---
+# --- Point layer: YOU (gold) ---
 folium.CircleMarker(
     location=[YOUR_LAT, YOUR_LON],
     radius=9, color="#c2410c", weight=3, fill=True,
     fill_color="#f59e0b", fill_opacity=1.0,
-    popup=f"You — {YOUR_CITY}<br>({YOUR_LAT:.4f}, {YOUR_LON:.4f})",
-    tooltip="You (Point)",
+    popup=f"<b>YOU</b><br>{YOUR_CITY}<br>lat: {YOUR_LAT:.4f}°<br>lon: {YOUR_LON:.4f}°",
+    tooltip=f"YOU — ({YOUR_LAT:.4f}, {YOUR_LON:.4f})",
+).add_to(m)
+
+# --- Point layer: ISS RIGHT NOW (red) ---
+# Same primitive as YOU. Two zero-dimensional points on the same map,
+# described by the same (lon, lat) tuple structure — one tied to a
+# building you can walk into, one tied to a 420-tonne spacecraft
+# moving at 7.66 km/s, 408 km above sea level.
+folium.CircleMarker(
+    location=[ISS_LAT_NOW, ISS_LON_NOW],
+    radius=10, color="#7f1d1d", weight=3, fill=True,
+    fill_color="#dc2626", fill_opacity=1.0,
+    popup=f"<b>ISS — RIGHT NOW</b><br>(sub-satellite point)<br>lat: {ISS_LAT_NOW:.4f}°<br>lon: {ISS_LON_NOW:.4f}°<br>altitude ≈ 408 km",
+    tooltip=f"ISS now — ({ISS_LAT_NOW:.4f}, {ISS_LON_NOW:.4f})",
 ).add_to(m)
 
 folium.LayerControl(collapsed=False).add_to(m)
@@ -329,13 +360,15 @@ cells.append(md(
 
 Now zoom out from the rendering and look at what we actually have in memory:
 
-| Primitive | Stored as                            | Dimensions |
-|-----------|--------------------------------------|------------|
-| Point     | 1 `(lon, lat)` pair                  | 0          |
-| Line      | Ordered list of `(lon, lat)` pairs   | 1          |
-| Polygon   | Closed ring of `(lon, lat)` pairs    | 2          |
+| Primitive | Example here                       | Stored as                            | Dimensions |
+|-----------|------------------------------------|--------------------------------------|------------|
+| Point     | YOU, ISS sub-satellite point       | 1 `(lon, lat)` pair                  | 0          |
+| Line      | ISS next-orbit ground track        | Ordered list of `(lon, lat)` pairs   | 1          |
+| Polygon   | Your country                       | Closed ring of `(lon, lat)` pairs    | 2          |
 
-**The geometry differs, the coordinates don't.** All three are lists of `(lon, lat)` pairs in the **same CRS** (WGS84, `EPSG:4326`). The shape is just a rule about how to connect them — and the CRS is the rule that says what the numbers actually mean.
+YOU and the ISS RIGHT NOW are described by the **same primitive** (Point) using the **same coordinate system** (WGS84 lat/lon). Two zero-dimensional points. One is on the ground; one is 408 km up and moving. That distinction lives in the **data attached to the point** (altitude, velocity, timestamp), not in the geometry.
+
+**The geometry differs, the coordinates don't.** All four are lists of `(lon, lat)` pairs in the same CRS. The shape is just a rule about how to connect them — and the CRS is the rule that says what the numbers actually mean.
 
 CRS is where careers go to die. Let's show why.
 """
@@ -407,12 +440,13 @@ cells.append(md(
 
 Before considering the lab complete, verify:
 
-- [ ] **Point.** The location print-out shows a real city near you (or your fallback).
+- [ ] **Point #1 — YOU.** The location print-out shows a real city near you (or your fallback).
+- [ ] **Point #2 — ISS now.** The sub-satellite Point printed with a lat/lon, and shows as a red circle on the final map.
 - [ ] **Line.** The ISS track has > 100 vertices and (usually) more than one sub-line — meaning it crossed the antimeridian.
 - [ ] **Polygon.** Your country was matched and has > 100 vertices.
 - [ ] **Point-in-polygon.** `country_poly.contains(you)` returned `True` (or you can explain why not).
 - [ ] **CRS.** Web Mercator distance differs from geodesic distance by a non-trivial percentage.
-- [ ] **Map.** The interactive map shows all three layers, the legend toggles them, and the ISS track does not draw a stripe across the whole globe.
+- [ ] **Map.** The interactive map shows YOU + ISS-now as two clickable Points, the ISS track Line, and your country Polygon — and the ISS track does not draw a stripe across the whole globe.
 - [ ] **Quiz on the [Week 1 page](https://launchdetect.com/academy/week/1/).** Try answering before checking the key.
 
 ## What's next
